@@ -26,7 +26,7 @@ function App(){
      <nav>
        <button className={page==='dashboard'?'active':''} onClick={()=>go('dashboard')}><LayoutDashboard size={17}/> Dashboard</button>
        <button className={page==='clientes'?'active':''} onClick={()=>go('clientes')}><Users size={17}/> Clientes</button>
-       <button onClick={()=>setModal('agenda')}><CalendarDays size={17}/> Agenda</button>
+       <button className={page==='agenda'?'active':''} onClick={()=>go('agenda')}><CalendarDays size={17}/> Agenda</button>
        <label className="nav-import"><Upload size={17}/> Importar Excel<input type="file" accept=".xlsx,.xls" onChange={importExcel}/></label>
      </nav>
    </header>
@@ -34,12 +34,12 @@ function App(){
      {msg&&<div className="toast">{msg}<button onClick={()=>setMsg('')}>×</button></div>}
      {page==='dashboard'&&<Dashboard onOpenClient={id=>{setPage('clientes');open(id)}}/>}
      {page==='clientes'&&!selected&&<ClientsPage q={q} setQ={setQ} clients={clients} loading={loading} onOpen={open} onNew={()=>setModal('new')} />}
+     {page==='agenda'&&<AgendaPage />}
      {page==='clientes'&&selected&&<ClientView data={selected} onBack={()=>setSelected(null)} onRefresh={()=>open(selected.cliente.id)} onSchedule={()=>setModal('schedule')} onDelete={deleteClient} onEdit={()=>setModal('edit')} />}
    </main>
    {modal==='new'&&<ClientModal title="Novo cliente" onClose={()=>setModal(null)} onSave={async d=>{await api('/clientes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});setModal(null);load()}}/>}
    {modal==='edit'&&<ClientModal title="Editar cliente" initial={selected.cliente} onClose={()=>setModal(null)} onSave={async d=>{await api('/clientes/'+selected.cliente.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});setModal(null);open(selected.cliente.id)}}/>}
    {modal==='schedule'&&<ScheduleModal cliente={selected.cliente} onClose={()=>setModal(null)} onSave={async d=>{await api('/clientes/'+selected.cliente.id+'/servicos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});setModal(null);open(selected.cliente.id)}}/>}
-   {modal==='agenda'&&<AgendaModal onClose={()=>setModal(null)}/>}
  </div>
 }
 
@@ -123,7 +123,42 @@ function ScheduleModal({cliente,onClose,onSave}){
    <FormRow label="Valor"><input type="text" inputMode="numeric" placeholder="R$ 0,00" value={valor} onChange={e=>setValor(formatMoneyInput(e.target.value))}/></FormRow>
  </div><FormRow label="Observações"><textarea value={obs} onChange={e=>setObs(e.target.value)} /></FormRow><ModalActions onClose={onClose} onSave={save}/></Modal>
 }
-function AgendaModal({onClose}){const [items,setItems]=useState([]);useEffect(()=>{api('/agenda').then(setItems)},[]);return <Modal title="Agenda" onClose={onClose}><div className="agenda">{items.map(s=><div className="agendaRow" key={s.id}><b>{dateBR(s.data_agendamento)}</b><span>{s.horario||'—'}</span><div><strong>{s.cliente_nome}</strong><small>{s.tipo_servico}{s.operador?' · '+s.operador:''}</small></div><em>{s.status}</em></div>)}{!items.length&&<div className="empty">Nenhum serviço agendado.</div>}</div></Modal>}
+function AgendaPage(){
+ const [items,setItems]=useState([]),[month,setMonth]=useState(new Date(new Date().getFullYear(),new Date().getMonth(),1)),[team,setTeam]=useState('Todas'),[selectedDay,setSelectedDay]=useState(null),[loading,setLoading]=useState(true);
+ const load=async()=>{setLoading(true);try{setItems(await api('/agenda'))}finally{setLoading(false)}};
+ useEffect(()=>{load()},[]);
+ const teams=['Todas','Operador 1','Operador 2','Equipe de limpeza'];
+ const filtered=items.filter(s=>{const d=new Date(s.data_agendamento+'T12:00'); const sameMonth=d.getFullYear()===month.getFullYear()&&d.getMonth()===month.getMonth(); const t=s.categoria==='Higienização'?'Equipe de limpeza':s.operador; return sameMonth&&(team==='Todas'||t===team)});
+ const year=month.getFullYear(), mon=month.getMonth();
+ const first=new Date(year,mon,1); const daysIn=new Date(year,mon+1,0).getDate(); const offset=(first.getDay()+6)%7;
+ const cells=[]; for(let i=0;i<offset;i++)cells.push(null); for(let d=1;d<=daysIn;d++)cells.push(d); while(cells.length%7)cells.push(null);
+ const keyDate=d=>`${year}-${String(mon+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+ const byDay=d=>filtered.filter(s=>s.data_agendamento===keyDate(d)).sort((a,b)=>(a.horario||'99:99').localeCompare(b.horario||'99:99'));
+ const selectedItems=selectedDay?byDay(selectedDay):[];
+ const monthLabel=month.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+ const prev=()=>setMonth(new Date(year,mon-1,1)),next=()=>setMonth(new Date(year,mon+1,1)),today=()=>{const n=new Date();setMonth(new Date(n.getFullYear(),n.getMonth(),1));setSelectedDay(n.getDate())};
+ const teamLabel=s=>s.categoria==='Higienização'?'Limpeza':s.operador?.replace('Operador ','Op. ')||'—';
+ const teamClass=s=>s.categoria==='Higienização'?'clean':s.operador==='Operador 1'?'op1':'op2';
+ return <div className="agenda-page">
+   <PageHeader title="Agenda" subtitle="Planejamento completo dos serviços da empresa — hoje e para os próximos meses"/>
+   <section className="agenda-toolbar card">
+     <div className="month-nav"><button onClick={prev}>‹</button><div><strong>{monthLabel.charAt(0).toUpperCase()+monthLabel.slice(1)}</strong><small>{filtered.length} serviço(s) neste mês</small></div><button onClick={next}>›</button><button className="today-btn" onClick={today}>Hoje</button></div>
+     <div className="team-filters">{teams.map(t=><button key={t} className={team===t?'selected':''} onClick={()=>setTeam(t)}>{t}</button>)}<button className="refresh-agenda" onClick={load}><RefreshCw size={16}/></button></div>
+   </section>
+   <section className="team-summary">
+     {[['Operador 1','op1'],['Operador 2','op2'],['Equipe de limpeza','clean']].map(([name,cls])=>{const count=filtered.filter(s=>(s.categoria==='Higienização'?'Equipe de limpeza':s.operador)===name).length;return <div className={'team-summary-card '+cls} key={name}><span></span><div><strong>{name}</strong><small>{count} serviço(s) no mês</small></div></div>})}
+   </section>
+   {loading?<div className="loading">Carregando agenda...</div>:<>
+   <section className="calendar card">
+     <div className="weekdays">{['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(x=><div key={x}>{x}</div>)}</div>
+     <div className="calendar-grid">{cells.map((d,i)=>{const list=d?byDay(d):[];const isToday=d&&new Date().getFullYear()===year&&new Date().getMonth()===mon&&new Date().getDate()===d;return <button key={i} disabled={!d} className={'day-cell '+(d?'':'blank')+(isToday?' today':'')+(selectedDay===d?' chosen':'')} onClick={()=>d&&setSelectedDay(d)}><div className="day-number">{d||''}{isToday&&<span>Hoje</span>}</div><div className="day-services">{list.slice(0,4).map(s=><div key={s.id} className={'mini-service '+teamClass(s)}><b>{s.horario||'—'}</b><span>{s.cliente_nome}</span><em>{teamLabel(s)}</em></div>)}{list.length>4&&<small className="more">+{list.length-4} serviços</small>}{d&&!list.length&&<span className="free-day">Livre</span>}</div></button>})}</div>
+   </section>
+   <section className="agenda-detail card">
+     <div className="cardhead"><div><b>{selectedDay?`${String(selectedDay).padStart(2,'0')}/${String(mon+1).padStart(2,'0')}/${year}`:'Selecione um dia'}</b><span>{selectedDay?`${selectedItems.length} serviço(s) programado(s)`:'Clique em um dia para ver os detalhes'}</span></div></div>
+     {selectedDay&&selectedItems.length?selectedItems.map(s=><div className="agenda-detail-row" key={s.id}><div className="detail-time">{s.horario||'—'}</div><div className={'team-dot '+teamClass(s)}></div><div className="detail-main"><strong>{s.cliente_nome}</strong><small>{s.tipo_servico} · {s.endereco}</small></div><div className="detail-team">{s.categoria==='Higienização'?'Equipe de limpeza':s.operador}</div><em className={'status '+s.status.toLowerCase().replaceAll(' ','-')}>{s.status}</em></div>):selectedDay?<div className="empty compact">Nenhum serviço programado para este dia.</div>:<div className="empty compact">Escolha uma data no calendário.</div>}
+   </section></>}
+ </div>
+}
 function FormRow({label,children}){return <label className="field"><span>{label}</span>{children}</label>}
 function Modal({title,onClose,children}){return <div className="overlay"><div className="modal"><div className="modalhead"><h3>{title}</h3><button onClick={onClose}>×</button></div>{children}</div></div>}
 function ModalActions({onClose,onSave}){return <div className="modalactions"><button onClick={onClose}>Cancelar</button><button className="primary" onClick={onSave}>Salvar</button></div>}
