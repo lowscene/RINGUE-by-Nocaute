@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+build/
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Banco local / dados
+*.db
+*.sqlite
+*.sqlite3
+
+# Git
+*.swp
