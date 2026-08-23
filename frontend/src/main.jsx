@@ -85,11 +85,43 @@ function ClientView({data,onBack,onRefresh,onSchedule,onDelete,onEdit}){const c=
 
 function ClientModal({title,initial={},onClose,onSave}){const [d,setD]=useState({nome:initial.nome||'',endereco:initial.endereco||'',telefone:initial.telefone||''});return <Modal title={title} onClose={onClose}><FormRow label="Nome"><input value={d.nome} onChange={e=>setD({...d,nome:e.target.value})}/></FormRow><FormRow label="Endereço"><input value={d.endereco} onChange={e=>setD({...d,endereco:e.target.value})}/></FormRow><FormRow label="Telefone"><input value={d.telefone} onChange={e=>setD({...d,telefone:e.target.value})}/></FormRow><ModalActions onClose={onClose} onSave={()=>onSave(d)}/></Modal>}
 
+function formatDateBR(value){
+ const digits=value.replace(/\D/g,'').slice(0,8);
+ if(digits.length<=2)return digits;
+ if(digits.length<=4)return digits.slice(0,2)+'/'+digits.slice(2);
+ return digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);
+}
+function dateBRToISO(value){
+ const [day,month,year]=value.split('/');
+ if(!day||!month||!year||year.length!==4)return '';
+ return `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;
+}
+function formatMoneyInput(value){
+ const digits=value.replace(/\D/g,'');
+ if(!digits)return '';
+ const cents=Number(digits)/100;
+ return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents);
+}
+function moneyInputToNumber(value){
+ const digits=value.replace(/\D/g,'');
+ return digits?Number(digits)/100:null;
+}
 function ScheduleModal({cliente,onClose,onSave}){
  const [cat,setCat]=useState('Dedetização'),[tipo,setTipo]=useState(services.Dedetização[0]),[data,setData]=useState(''),[horario,setHorario]=useState(''),[operador,setOperador]=useState('Operador 1'),[obs,setObs]=useState(''),[valor,setValor]=useState('');
  useEffect(()=>{setTipo(services[cat][0]);if(cat==='Higienização')setOperador('')},[cat]);
- const save=()=>onSave({categoria:cat,tipo_servico:tipo,data_agendamento:data,horario:horario||null,operador:cat==='Dedetização'?operador:null,status:'Agendado',valor:valor?Number(valor):null,observacoes:obs||null});
- return <Modal title={'Agendar serviço — '+cliente.nome} onClose={onClose}><div className="grid2"><FormRow label="Categoria"><select value={cat} onChange={e=>setCat(e.target.value)}><option>Dedetização</option><option>Higienização</option></select></FormRow><FormRow label="Serviço"><select value={tipo} onChange={e=>setTipo(e.target.value)}>{services[cat].map(x=><option key={x}>{x}</option>)}</select></FormRow><FormRow label="Data"><input type="date" value={data} onChange={e=>setData(e.target.value)}/></FormRow><FormRow label="Horário"><input type="time" value={horario} onChange={e=>setHorario(e.target.value)}/></FormRow>{cat==='Dedetização'&&<FormRow label="Operador"><select value={operador} onChange={e=>setOperador(e.target.value)}><option>Operador 1</option><option>Operador 2</option></select></FormRow>}<FormRow label="Valor"><input type="number" step="0.01" value={valor} onChange={e=>setValor(e.target.value)}/></FormRow></div><FormRow label="Observações"><textarea value={obs} onChange={e=>setObs(e.target.value)} /></FormRow><ModalActions onClose={onClose} onSave={save}/></Modal>
+ const save=()=>{
+   const dataISO=dateBRToISO(data);
+   if(!dataISO){alert('Informe uma data válida no formato DD/MM/AAAA.');return}
+   onSave({categoria:cat,tipo_servico:tipo,data_agendamento:dataISO,horario:horario||null,operador:cat==='Dedetização'?operador:null,status:'Agendado',valor:moneyInputToNumber(valor),observacoes:obs||null});
+ };
+ return <Modal title={'Agendar serviço — '+cliente.nome} onClose={onClose}><div className="grid2">
+   <FormRow label="Categoria"><select value={cat} onChange={e=>setCat(e.target.value)}><option>Dedetização</option><option>Higienização</option></select></FormRow>
+   <FormRow label="Serviço"><select value={tipo} onChange={e=>setTipo(e.target.value)}>{services[cat].map(x=><option key={x}>{x}</option>)}</select></FormRow>
+   <FormRow label="Data"><input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength="10" value={data} onChange={e=>setData(formatDateBR(e.target.value))}/></FormRow>
+   <FormRow label="Horário"><input type="text" inputMode="numeric" placeholder="HH:MM" maxLength="5" value={horario} onChange={e=>setHorario(e.target.value.replace(/\D/g,'').slice(0,4).replace(/(\d{2})(\d)/,'$1:$2'))}/></FormRow>
+   {cat==='Dedetização'&&<FormRow label="Operador"><select value={operador} onChange={e=>setOperador(e.target.value)}><option>Operador 1</option><option>Operador 2</option></select></FormRow>}
+   <FormRow label="Valor"><input type="text" inputMode="numeric" placeholder="R$ 0,00" value={valor} onChange={e=>setValor(formatMoneyInput(e.target.value))}/></FormRow>
+ </div><FormRow label="Observações"><textarea value={obs} onChange={e=>setObs(e.target.value)} /></FormRow><ModalActions onClose={onClose} onSave={save}/></Modal>
 }
 function AgendaModal({onClose}){const [items,setItems]=useState([]);useEffect(()=>{api('/agenda').then(setItems)},[]);return <Modal title="Agenda" onClose={onClose}><div className="agenda">{items.map(s=><div className="agendaRow" key={s.id}><b>{dateBR(s.data_agendamento)}</b><span>{s.horario||'—'}</span><div><strong>{s.cliente_nome}</strong><small>{s.tipo_servico}{s.operador?' · '+s.operador:''}</small></div><em>{s.status}</em></div>)}{!items.length&&<div className="empty">Nenhum serviço agendado.</div>}</div></Modal>}
 function FormRow({label,children}){return <label className="field"><span>{label}</span>{children}</label>}
