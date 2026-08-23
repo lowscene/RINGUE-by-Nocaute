@@ -1,4 +1,5 @@
 services:
+
   db:
     image: mysql:8.4
     restart: unless-stopped
@@ -16,6 +17,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
   backend:
     build: ./backend
     restart: unless-stopped
@@ -23,15 +25,22 @@ services:
       DATABASE_URL: mysql+pymysql://nocaute:nocaute@db:3306/nocaute
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app
     depends_on:
       db:
         condition: service_healthy
+
   frontend:
     build: ./frontend
     restart: unless-stopped
     ports:
       - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend
+
 volumes:
   mysql_data:
