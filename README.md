@@ -1,48 +1,56 @@
-# Sistema Nocaute — Dedetizadora
+# RINGUE — Sistema Nocaute
 
-Aplicação web para gestão de clientes, agendamentos, histórico de serviços, importação de Excel e geração de documentos PDF.
+Aplicação web para gestão da empresa de dedetização/higienização.
 
 ## Stack
 - Frontend: React + Vite
 - Backend: Python + FastAPI + SQLAlchemy
 - Banco: MySQL 8.4
 - Excel: pandas + openpyxl + xlrd
-- Documentos: ReportLab
+- PDF: ReportLab
 - Execução: Docker Compose
 
-## Funcionalidades desta versão
-- Dashboard com indicadores e divisão dos serviços do dia por operador/equipe.
-- Pesquisa por nome, telefone e endereço.
-- Cadastro, edição e exclusão de clientes.
-- Menu individual do cliente.
-- Agendamento de serviço.
-- Categorias e tipos de serviço exatamente conforme solicitado.
-- Histórico de serviços.
-- Status: Agendado, Confirmado, Realizado, Cancelado, Aguardando pagamento e Pago.
-- Agenda geral.
-- Importação de Excel (.xlsx/.xls), com atualização de cliente quando nome + telefone já existem.
-- Geração de ordem de serviço em PDF.
-- MySQL persistente em volume Docker.
+## Clientes
+A tabela de clientes agora contempla:
+ID interno + ID do Excel, Nome, Tipo de estabelecimento, Data do cadastro, Razão social, CNPJ, Inscrição estadual, Nome do contato, Endereço, Bairro, Complemento, E-mail e Telefone.
+
+O ID do Excel é preservado em `id_excel`. Ele não é usado como chave primária porque o Sistema Geral contém IDs `PROP.` repetidos para diferentes endereços/clientes.
+
+## Sistema Geral
+O projeto inclui `backend/data/SISTEMA GERAL.xlsx`, fornecido pela empresa.
+
+No menu do aplicativo há:
+- **Importar Excel**: para arquivos novos, com detecção automática do formato.
+- **Sistema Geral**: importa diretamente o arquivo `SISTEMA GERAL.xlsx` incluído no projeto.
+
+O Sistema Geral tem o cabeçalho real na linha 6 da planilha. O importador mapeia:
+PROP. → ID do Excel
+CLIENTE → Nome
+DESCRIÇÃO DO LOCAL → Tipo de estabelecimento
+DATA → Data do cadastro
+RAZÃO SOCIAL → Razão social
+C.N.P.J. → CNPJ
+INSC. ESTADUAL → Inscrição estadual
+CONTATO → Nome do contato
+RUA... + NÚMERO → Endereço
+BAIRRO → Bairro
+COMPLEMENTO → Complemento
+E-MAIL → E-mail
+TELEFONE → Telefone
+
+A importação é idempotente: importar o mesmo Sistema Geral novamente atualiza os registros encontrados em vez de criar cópias.
 
 ## Rodar
-Pré-requisito: Docker Desktop instalado e aberto.
+Com Docker Desktop iniciado e funcionando:
 
 ```bash
 docker compose up --build
 ```
 
-Depois abra:
+Depois:
 - Sistema: http://localhost:5173
 - API: http://localhost:8000
-- Documentação da API: http://localhost:8000/docs
+- Docs: http://localhost:8000/docs
 
-## Excel
-O importador procura colunas equivalentes a:
-- Nome / Cliente / Name
-- Endereço / Endereço / Address
-- Telefone / Celular / Phone
-
-O arquivo pode ter mais colunas; elas serão ignoradas nesta primeira versão. O próximo passo, quando o Excel real for fornecido, é mapear também os históricos de serviços, valores, pagamentos e outros campos existentes na empresa.
-
-## Produção
-Antes de publicar na internet, altere as senhas do MySQL, coloque HTTPS, restrinja CORS, configure backup automático e use um proxy reverso.
+## Atenção ao banco
+O MySQL usa o volume `mysql_data`, portanto os dados continuam existindo quando os containers são parados. Não use `docker compose down -v` se quiser preservar o banco.

@@ -1,13 +1,19 @@
 import React,{useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Search,Plus,CalendarDays,FileText,Upload,ArrowLeft,Trash2,Edit3,RefreshCw,LayoutDashboard,Users,Download,Clock,CheckCircle2,CircleDollarSign,AlertCircle,UsersRound} from 'lucide-react';
+import {Search,Plus,CalendarDays,FileText,ArrowLeft,Trash2,Edit3,RefreshCw,LayoutDashboard,Users,Clock,CheckCircle2,CircleDollarSign,AlertCircle,UsersRound,Phone} from 'lucide-react';
 import './style.css';
 
-const API='http://localhost:8000/api';
+// Antes fixo em "http://localhost:8000/api", o que só funcionava quando o
+// navegador estava na mesma máquina do Docker. Agora usa o mesmo host que foi
+// digitado na barra de endereço (funciona em rede local, IP do servidor ou
+// domínio), mantendo a porta 8000 do backend. Pode ser sobrescrito em build
+// definindo VITE_API_URL.
+const API = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:8000/api`;
 const services={
   "Dedetização":["Desinsetização","Desbaratização","Desratização","Descupinização"],
   "Higienização":["Limpeza de cisterna","Limpeza de caixa d'água","Limpeza de caixa de gordura","Desentupimento"]
 };
+const contractTypes=["Avulso","3 meses","6 meses","1 ano"];
 const api=async(path,opt={})=>{const r=await fetch(API+path,opt);if(!r.ok)throw new Error(await r.text());return r.json()};
 const money=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
 const dateBR=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
@@ -17,7 +23,6 @@ function App(){
  const load=async()=>{setLoading(true);try{const d=await api('/clientes?q='+encodeURIComponent(q));setClients(d.items)}finally{setLoading(false)}};
  useEffect(()=>{if(page==='clientes'){const t=setTimeout(load,250);return()=>clearTimeout(t)}},[q,page]);
  const open=async id=>setSelected(await api('/clientes/'+id));
- const importExcel=async e=>{const file=e.target.files[0];if(!file)return;const fd=new FormData();fd.append('file',file);setMsg('Importando...');try{const d=await api('/importar-excel',{method:'POST',body:fd});setMsg(`Importação concluída: ${d.inseridos} inseridos, ${d.atualizados} atualizados.`);if(page==='clientes')load()}catch(err){setMsg('Erro na importação. Verifique o Excel.')}e.target.value=''};
  const deleteClient=async()=>{if(!confirm('Excluir este cliente e o histórico de serviços?'))return;await api('/clientes/'+selected.cliente.id,{method:'DELETE'});setSelected(null);load()};
  const go=p=>{setSelected(null);setModal(null);setPage(p)};
  return <div className="app">
@@ -27,7 +32,6 @@ function App(){
        <button className={page==='dashboard'?'active':''} onClick={()=>go('dashboard')}><LayoutDashboard size={17}/> Dashboard</button>
        <button className={page==='clientes'?'active':''} onClick={()=>go('clientes')}><Users size={17}/> Clientes</button>
        <button className={page==='agenda'?'active':''} onClick={()=>go('agenda')}><CalendarDays size={17}/> Agenda</button>
-       <label className="nav-import"><Upload size={17}/> Importar Excel<input type="file" accept=".xlsx,.xls" onChange={importExcel}/></label>
      </nav>
    </header>
    <main>
@@ -47,7 +51,7 @@ function ClientsPage({q,setQ,clients,loading,onOpen,onNew}){
  return <div>
    <PageHeader title="Clientes" subtitle="Pesquise e acesse rapidamente qualquer cliente"/>
    <div className="toolbar"><div className="search"><Search size={19}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Pesquisar por nome, telefone ou endereço..."/></div><button className="primary" onClick={onNew}><Plus size={18}/> Novo cliente</button></div>
-   <section className="card"><div className="cardhead"><b>Clientes</b><span>{loading?'Carregando...':`${clients.length} encontrados`}</span></div><div className="list">{clients.map(c=><button className="clientrow" key={c.id} onClick={()=>onOpen(c.id)}><div className="avatar">{c.nome[0]}</div><div><strong>{c.nome}</strong><small>{c.telefone} · {c.endereco}</small></div><span>›</span></button>)}{!clients.length&&!loading&&<div className="empty">Nenhum cliente encontrado.</div>}</div></section>
+   <section className="card"><div className="cardhead"><b>Clientes</b><span>{loading?'Carregando...':`${clients.length} encontrados`}</span></div><div className="list">{clients.map(c=><button className="clientrow" key={c.id} onClick={()=>onOpen(c.id)}><div className="avatar">{c.nome[0]}</div><div><strong>{c.nome}</strong><small>{c.tipo_estabelecimento||"Cliente"} · {c.telefone} · {c.endereco}{c.bairro?" · "+c.bairro:""}</small></div><span>›</span></button>)}{!clients.length&&!loading&&<div className="empty">Nenhum cliente encontrado.</div>}</div></section>
  </div>
 }
 
@@ -71,6 +75,7 @@ function Dashboard({onOpenClient}){
      <Stat icon={<CircleDollarSign size={20}/>} label="Recebido" value={money(data.recebido)} money/>
      <Stat icon={<AlertCircle size={20}/>} label="Pendentes" value={data.pendentes}/>
    </section>
+   <ContractAlert info={data.contratos_vencendo}/>
    <div className="section-title"><div><h2>Serviços de hoje</h2><p>{data.data_hoje}</p></div><button className="iconbutton" onClick={load}><RefreshCw size={17}/></button></div>
    <div className="service-columns">
      {groups.map(g=><section className="today-card card" key={g.key}><div className="today-head">{g.icon}<div><strong>{g.title}</strong><small>{data.hoje[g.key].length} serviço(s)</small></div></div>
@@ -81,9 +86,73 @@ function Dashboard({onOpenClient}){
 }
 function Stat({icon,label,value,money}){return <div className="stat-card card"><div className="stat-icon">{icon}</div><div><span>{label}</span><strong className={money?'money':''}>{value}</strong></div></div>}
 
-function ClientView({data,onBack,onRefresh,onSchedule,onDelete,onEdit}){const c=data.cliente;return <div><button className="back" onClick={onBack}><ArrowLeft size={17}/> Voltar</button><div className="profile card"><div className="avatar big">{c.nome[0]}</div><div className="profileinfo"><h2>{c.nome}</h2><p>{c.endereco}</p><p>{c.telefone}</p></div><div className="actions"><button className="primary" onClick={onSchedule}><CalendarDays size={17}/> Agendar serviço</button><button onClick={onEdit}><Edit3 size={17}/> Editar</button><button className="danger" onClick={onDelete}><Trash2 size={17}/> Excluir</button></div></div><div className="macro"><button onClick={onSchedule}><CalendarDays/><b>AGENDAR SERVIÇO</b><span>Defina data, horário e tipo de serviço</span></button><button onClick={()=>data.servicos[0]?window.open(`${API}/clientes/${c.id}/documento?servico_id=${data.servicos[0].id}&tipo=ordem`,'_blank'):alert('Agende um serviço primeiro.')}><FileText/><b>IMPRIMIR DOCUMENTOS</b><span>Ordem de serviço e comprovante em PDF</span></button></div><section className="card"><div className="cardhead"><b>Histórico de serviços</b><button onClick={onRefresh}><RefreshCw size={16}/></button></div>{data.servicos.length?data.servicos.map(s=><div className="service" key={s.id}><div><strong>{s.tipo_servico}</strong><small>{s.categoria}{s.operador?' · '+s.operador:''} · {dateBR(s.data_agendamento)} {s.horario||''}</small></div><select value={s.status} onChange={async e=>{await api(`/servicos/${s.id}/status?status=${encodeURIComponent(e.target.value)}`,{method:'PATCH'});onRefresh()}}><option>Agendado</option><option>Confirmado</option><option>Realizado</option><option>Cancelado</option><option>Aguardando pagamento</option><option>Pago</option></select><button title="Imprimir" onClick={()=>window.open(`${API}/clientes/${c.id}/documento?servico_id=${s.id}&tipo=ordem`,'_blank')}><FileText size={17}/></button></div>):<div className="empty">Nenhum serviço cadastrado.</div>}</section></div>}
+function ContractAlert({info}){
+ const total=info?.total||0,itens=info?.itens||[];
+ return <section className="contract-alert card">
+   <div className="contract-alert-count">
+     <AlertCircle size={22}/>
+     <div><strong>{total}</strong><span>contrato{total===1?'':'s'} perto de vencer</span></div>
+   </div>
+   <div className="contract-alert-divider"></div>
+   <div className="contract-alert-scroll">
+     {itens.map(it=><ContractPill key={it.servico_id} item={it}/>)}
+     {!itens.length&&<div className="contract-alert-empty">Nenhum contrato próximo do vencimento.</div>}
+   </div>
+ </section>
+}
 
-function ClientModal({title,initial={},onClose,onSave}){const [d,setD]=useState({nome:initial.nome||'',endereco:initial.endereco||'',telefone:initial.telefone||''});return <Modal title={title} onClose={onClose}><FormRow label="Nome"><input value={d.nome} onChange={e=>setD({...d,nome:e.target.value})}/></FormRow><FormRow label="Endereço"><input value={d.endereco} onChange={e=>setD({...d,endereco:e.target.value})}/></FormRow><FormRow label="Telefone"><input value={d.telefone} onChange={e=>setD({...d,telefone:e.target.value})}/></FormRow><ModalActions onClose={onClose} onSave={()=>onSave(d)}/></Modal>}
+function ContractPill({item}){
+ const [open,setOpen]=useState(false);
+ return <button className={'contract-pill'+(open?' flipped':'')} onClick={()=>setOpen(o=>!o)} title="Clique para ver telefone e contato">
+   {!open?<>
+     <strong>{item.cliente_nome}</strong>
+     <small>{item.tipo_contrato} · vence em {item.dias_restantes} dia{item.dias_restantes===1?'':'s'}</small>
+   </>:<>
+     <strong><Phone size={13}/> {item.telefone}</strong>
+     <small>{item.nome_contato||'Contato não informado'}</small>
+   </>}
+ </button>
+}
+
+function ClientView({data,onBack,onRefresh,onSchedule,onDelete,onEdit}){const c=data.cliente;return <div>
+ <button className="back" onClick={onBack}><ArrowLeft size={17}/> Voltar</button>
+ <div className="profile card">
+   <div className="avatar big">{(c.nome||'?')[0]}</div>
+   <div className="profileinfo"><h2>{c.nome}</h2><p>{c.tipo_estabelecimento||'Cliente'} · ID {c.id}</p><p>{c.endereco}{c.bairro?' · '+c.bairro:''}</p><p>{c.telefone}{c.email?' · '+c.email:''}</p></div>
+   <div className="actions"><button className="primary" onClick={onSchedule}><CalendarDays size={17}/> Agendar serviço</button><button onClick={onEdit}><Edit3 size={17}/> Editar</button><button className="danger" onClick={onDelete}><Trash2 size={17}/> Excluir</button></div>
+ </div>
+ <section className="client-details card"><div className="cardhead"><b>Dados cadastrais</b><span>Informações do Sistema Geral</span></div><div className="details-grid">
+   <Detail label="ID" value={c.id}/><Detail label="Nome" value={c.nome}/><Detail label="Tipo de estabelecimento" value={c.tipo_estabelecimento}/>
+   <Detail label="Data do cadastro" value={c.data_cadastro?dateBR(c.data_cadastro):'—'}/><Detail label="Razão social" value={c.razao_social}/><Detail label="CNPJ" value={c.cnpj}/>
+   <Detail label="Inscrição estadual" value={c.inscricao_estadual}/><Detail label="Nome do contato" value={c.nome_contato}/><Detail label="Endereço" value={c.endereco}/>
+   <Detail label="Bairro" value={c.bairro}/><Detail label="Complemento" value={c.complemento}/><Detail label="E-mail" value={c.email}/><Detail label="Telefone" value={c.telefone}/>
+ </div></section>
+ <div className="macro"><button onClick={onSchedule}><CalendarDays/><b>AGENDAR SERVIÇO</b><span>Defina data, horário e tipo de serviço</span></button><button onClick={()=>data.servicos[0]?window.open(`${API}/clientes/${c.id}/documento?servico_id=${data.servicos[0].id}&tipo=ordem`,'_blank'):alert('Agende um serviço primeiro.')}><FileText/><b>IMPRIMIR DOCUMENTOS</b><span>Ordem de serviço e comprovante em PDF</span></button></div>
+ <section className="card"><div className="cardhead"><b>Histórico de serviços</b><button onClick={onRefresh}><RefreshCw size={16}/></button></div>{data.servicos.length?data.servicos.map(s=><div className="service" key={s.id}><div><strong>{s.tipo_servico}</strong><small>{s.categoria}{s.operador?' · '+s.operador:''} · {dateBR(s.data_agendamento)} {s.horario||''}</small>{s.tipo_contrato&&s.tipo_contrato!=='Avulso'&&<em className="contract-tag">Contrato {s.tipo_contrato}{s.data_vencimento?' · vence em '+dateBR(s.data_vencimento):''}</em>}</div><select value={s.status} onChange={async e=>{await api(`/servicos/${s.id}/status?status=${encodeURIComponent(e.target.value)}`,{method:'PATCH'});onRefresh()}}><option>Agendado</option><option>Confirmado</option><option>Realizado</option><option>Cancelado</option><option>Aguardando pagamento</option><option>Pago</option></select><button title="Imprimir" onClick={()=>window.open(`${API}/clientes/${c.id}/documento?servico_id=${s.id}&tipo=ordem`,'_blank')}><FileText size={17}/></button></div>):<div className="empty">Nenhum serviço cadastrado.</div>}</section>
+ </div>}
+function Detail({label,value}){return <div className="detail-item"><span>{label}</span><strong>{value||'—'}</strong></div>}
+
+function ClientModal({title,initial={},onClose,onSave}){const [d,setD]=useState({
+ nome:initial.nome||'',tipo_estabelecimento:initial.tipo_estabelecimento||'',data_cadastro:initial.data_cadastro?dateBR(initial.data_cadastro):'',
+ razao_social:initial.razao_social||'',cnpj:initial.cnpj||'',inscricao_estadual:initial.inscricao_estadual||'',nome_contato:initial.nome_contato||'',
+ endereco:initial.endereco||'',bairro:initial.bairro||'',complemento:initial.complemento||'',email:initial.email||'',telefone:initial.telefone||''
+});
+ const set=(k,v)=>setD(x=>({...x,[k]:v}));
+ const save=()=>{const payload={...d,data_cadastro:d.data_cadastro?dateBRToISO(d.data_cadastro):null};if(!payload.nome||!payload.endereco||!payload.telefone){alert('Nome, endereço e telefone são obrigatórios.');return}onSave(payload)};
+ return <Modal title={title} onClose={onClose}><div className="grid2">
+ <FormRow label="Nome"><input value={d.nome} onChange={e=>set('nome',e.target.value)}/></FormRow>
+ <FormRow label="Tipo de estabelecimento"><input value={d.tipo_estabelecimento} onChange={e=>set('tipo_estabelecimento',e.target.value)}/></FormRow>
+ <FormRow label="Data do cadastro"><input inputMode="numeric" placeholder="DD/MM/AAAA" maxLength="10" value={d.data_cadastro} onChange={e=>set('data_cadastro',formatDateBR(e.target.value))}/></FormRow>
+ <FormRow label="Razão social"><input value={d.razao_social} onChange={e=>set('razao_social',e.target.value)}/></FormRow>
+ <FormRow label="CNPJ"><input value={d.cnpj} onChange={e=>set('cnpj',e.target.value)}/></FormRow>
+ <FormRow label="Inscrição estadual"><input value={d.inscricao_estadual} onChange={e=>set('inscricao_estadual',e.target.value)}/></FormRow>
+ <FormRow label="Nome do contato"><input value={d.nome_contato} onChange={e=>set('nome_contato',e.target.value)}/></FormRow>
+ <FormRow label="Telefone"><input value={d.telefone} onChange={e=>set('telefone',e.target.value)}/></FormRow>
+ <FormRow label="E-mail"><input type="email" value={d.email} onChange={e=>set('email',e.target.value)}/></FormRow>
+ <FormRow label="Bairro"><input value={d.bairro} onChange={e=>set('bairro',e.target.value)}/></FormRow>
+ <FormRow label="Endereço"><input value={d.endereco} onChange={e=>set('endereco',e.target.value)}/></FormRow>
+ <FormRow label="Complemento"><input value={d.complemento} onChange={e=>set('complemento',e.target.value)}/></FormRow>
+ </div><ModalActions onClose={onClose} onSave={save}/></Modal>}
 
 function formatDateBR(value){
  const digits=value.replace(/\D/g,'').slice(0,8);
@@ -107,12 +176,12 @@ function moneyInputToNumber(value){
  return digits?Number(digits)/100:null;
 }
 function ScheduleModal({cliente,onClose,onSave}){
- const [cat,setCat]=useState('Dedetização'),[tipo,setTipo]=useState(services.Dedetização[0]),[data,setData]=useState(''),[horario,setHorario]=useState(''),[operador,setOperador]=useState('Operador 1'),[obs,setObs]=useState(''),[valor,setValor]=useState('');
+ const [cat,setCat]=useState('Dedetização'),[tipo,setTipo]=useState(services.Dedetização[0]),[data,setData]=useState(''),[horario,setHorario]=useState(''),[operador,setOperador]=useState('Operador 1'),[obs,setObs]=useState(''),[valor,setValor]=useState(''),[tipoContrato,setTipoContrato]=useState('Avulso');
  useEffect(()=>{setTipo(services[cat][0]);if(cat==='Higienização')setOperador('')},[cat]);
  const save=()=>{
    const dataISO=dateBRToISO(data);
    if(!dataISO){alert('Informe uma data válida no formato DD/MM/AAAA.');return}
-   onSave({categoria:cat,tipo_servico:tipo,data_agendamento:dataISO,horario:horario||null,operador:cat==='Dedetização'?operador:null,status:'Agendado',valor:moneyInputToNumber(valor),observacoes:obs||null});
+   onSave({categoria:cat,tipo_servico:tipo,data_agendamento:dataISO,horario:horario||null,operador:cat==='Dedetização'?operador:null,status:'Agendado',valor:moneyInputToNumber(valor),observacoes:obs||null,tipo_contrato:tipoContrato});
  };
  return <Modal title={'Agendar serviço — '+cliente.nome} onClose={onClose}><div className="grid2">
    <FormRow label="Categoria"><select value={cat} onChange={e=>setCat(e.target.value)}><option>Dedetização</option><option>Higienização</option></select></FormRow>
@@ -121,6 +190,7 @@ function ScheduleModal({cliente,onClose,onSave}){
    <FormRow label="Horário"><input type="text" inputMode="numeric" placeholder="HH:MM" maxLength="5" value={horario} onChange={e=>setHorario(e.target.value.replace(/\D/g,'').slice(0,4).replace(/(\d{2})(\d)/,'$1:$2'))}/></FormRow>
    {cat==='Dedetização'&&<FormRow label="Operador"><select value={operador} onChange={e=>setOperador(e.target.value)}><option>Operador 1</option><option>Operador 2</option></select></FormRow>}
    <FormRow label="Valor"><input type="text" inputMode="numeric" placeholder="R$ 0,00" value={valor} onChange={e=>setValor(formatMoneyInput(e.target.value))}/></FormRow>
+   <FormRow label="Tipo de contrato"><select value={tipoContrato} onChange={e=>setTipoContrato(e.target.value)}>{contractTypes.map(x=><option key={x}>{x}</option>)}</select></FormRow>
  </div><FormRow label="Observações"><textarea value={obs} onChange={e=>setObs(e.target.value)} /></FormRow><ModalActions onClose={onClose} onSave={save}/></Modal>
 }
 function AgendaPage(){
